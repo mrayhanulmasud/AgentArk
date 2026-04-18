@@ -55,7 +55,8 @@ def truncate_context(transcript_formatted, tokenizer, max_tokens):
 
 
 def build_dataset(args, tokenizer=None):
-    if args.dataset_name == "QMSum":
+    dataset_name_norm = args.dataset_name.lower() if args.dataset_name else ""
+    if dataset_name_norm == "qmsum":
         data_list = []
         samples_general_queries = [
             {
@@ -87,7 +88,9 @@ def build_dataset(args, tokenizer=None):
         formatted_samples_specific_queries = "\n\n".join([f"Sample Question: {sample['query']}\nSample Answer: {sample['answer']}" for sample in samples_specific_queries])
         _hub_path = (
             getattr(args, "dataset_hub_path", None)
-            or DATASET_HUB_MAP.get(args.dataset_name, args.dataset_name)
+            or DATASET_HUB_MAP.get(args.dataset_name)
+            or DATASET_HUB_MAP.get(dataset_name_norm)
+            or args.dataset_name
         )
         print(f"[build_dataset] loading QMSum from Hub path: {_hub_path}")
         try:
@@ -163,7 +166,7 @@ Question: {query_item['query']}
                     "source": "QMSum"
                 })
 
-    elif args.dataset_name == "QASPER":
+    elif dataset_name_norm == "qasper":
 
         dataset = load_dataset("allenai/qasper", split=args.split, trust_remote_code=True)
         print(f"{'='*50}\n", dataset)
@@ -278,7 +281,7 @@ Question: {question}
 
         
 
-    elif args.dataset_name == "HotpotQA":
+    elif dataset_name_norm == "hotpotqa":
         dataset = load_dataset("hotpotqa/hotpot_qa", "fullwiki", split=args.split, trust_remote_code=True)
         print(f"{'='*50}\n", dataset)
 
@@ -344,6 +347,9 @@ Question: {example["question"]}
             })
             
     else:
-        raise ValueError(f"Dataset {args.dataset_name} not supported.")
+        raise ValueError(
+            f"Dataset '{args.dataset_name}' not supported. "
+            f"Supported (case-insensitive): QMSum, QASPER, HotpotQA."
+        )
 
     return data_list
