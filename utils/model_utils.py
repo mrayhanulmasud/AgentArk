@@ -8,7 +8,11 @@ SAMPLE_ANSWER_END_STRING = "--- End of Sample Answers ---"
 # Maps friendly --dataset_name values to HuggingFace Hub identifiers.
 # Pass --dataset_hub_path to override these at runtime.
 DATASET_HUB_MAP = {
-    "QMSum": "Yale-LILY/qmsum",
+    # Yale-LILY/qmsum was removed from the Hub; pszemraj/qmsum-cleaned is
+    # the most widely-available mirror. It uses the SCROLLS-style
+    # {input, output} schema (not the original
+    # {meeting_transcripts, general_query_list}); build_dataset handles both.
+    "QMSum": "pszemraj/qmsum-cleaned",
 }
 
 # Maximum prompt tokens by model family
@@ -99,27 +103,28 @@ def build_dataset(args, tokenizer=None):
             raise RuntimeError(
                 f"Could not load QMSum from '{_hub_path}': {e}\n"
                 "Pass --dataset_hub_path <org/dataset> to specify the correct "
-                "HuggingFace Hub path (e.g. Yale-LILY/qmsum)."
+                "HuggingFace Hub path."
             ) from e
 
-        for entry in tqdm(dataset, desc="Building prompts"):
+        sample_fields = set(dataset.column_names) if hasattr(dataset, "column_names") else set(next(iter(dataset)).keys())
+        uses_original_schema = "meeting_transcripts" in sample_fields
 
-            transcript_formatted = "\n".join([f"{t['speaker']}: {t['content']}"
-                                for t in entry['meeting_transcripts']])
+        if uses_original_schema:
+            for entry in tqdm(dataset, desc="Building prompts"):
+                transcript_formatted = "\n".join([f"{t['speaker']}: {t['content']}"
+                                    for t in entry['meeting_transcripts']])
 
-            # # # Truncate if needed
-            if tokenizer is not None:
-                # Reserve a few hundred tokens for prompt template (instructions, samples, headers)
-                transcript_budget = args.max_prompt_tokens - 512
-                transcript_formatted, _ = truncate_context(
-                    transcript_formatted,
-                    tokenizer,
-                    transcript_budget
-                )
+                if tokenizer is not None:
+                    transcript_budget = args.max_prompt_tokens - 512
+                    transcript_formatted, _ = truncate_context(
+                        transcript_formatted,
+                        tokenizer,
+                        transcript_budget
+                    )
 
-            for query_item in entry['general_query_list']:
-                prompt = f"""
-Use 3-5 sentences to answer the following question based on the meeting transcript. 
+                for query_item in entry['general_query_list']:
+                    prompt = f"""
+Use 3-5 sentences to answer the following question based on the meeting transcript.
 You must keep both your reasoning and your final answer concise and to the point. Focus on the main topics, key decisions, and outcomes. Avoid irrelevant or unnecessary thinking.
 
 Question: {query_item['query']}
@@ -132,19 +137,19 @@ Question: {query_item['query']}
 {transcript_formatted}
 
 """
-                data_list.append({
-                    "query": prompt,
-                    "gt": query_item["answer"],
-                    "context": entry['meeting_transcripts'],
-                    "solutions": [],
-                    "labels": [],
-                    "topic": entry['topic'],
-                    "source": "QMSum"
-                })
-                
-            for query_item in entry['specific_query_list']:
-                prompt = f"""
-Use 3-5 sentences to answer the following question based on the meeting transcript. 
+                    data_list.append({
+                        "query": prompt,
+                        "gt": query_item["answer"],
+                        "context": entry['meeting_transcripts'],
+                        "solutions": [],
+                        "labels": [],
+                        "topic": entry.get('topic', ''),
+                        "source": "QMSum"
+                    })
+
+                for query_item in entry['specific_query_list']:
+                    prompt = f"""
+Use 3-5 sentences to answer the following question based on the meeting transcript.
 You must keep both your reasoning and your final answer concise and to the point. Focus on the main topics, key decisions, and outcomes. Avoid irrelevant or unnecessary thinking.
 
 Question: {query_item['query']}
@@ -156,13 +161,52 @@ Question: {query_item['query']}
 ## Meeting Transcript
 {transcript_formatted}
 """
+                    data_list.append({
+                        "query": prompt,
+                        "gt": query_item["answer"],
+                        "context": entry['meeting_transcripts'],
+                        "solutions": [],
+                        "labels": [],
+                        "topic": entry.get('topic', ''),
+                        "source": "QMSum"
+                    })
+        else:
+            # SCROLLS-style schema (pszemraj/qmsum-cleaned, tau/scrolls): one
+            # row per query, with `input` containing the query+transcript
+            # pre-formatted and `output` the answer.
+            input_key = "input" if "input" in sample_fields else ("chapter" if "chapter" in sample_fields else None)
+            output_key = "output" if "output" in sample_fields else ("summary_text" if "summary_text" in sample_fields else None)
+            if input_key is None or output_key is None:
+                raise RuntimeError(
+                    f"QMSum mirror at '{_hub_path}' has unexpected schema: "
+                    f"{sorted(sample_fields)}. Expected either "
+                    "('meeting_transcripts','general_query_list',...) or "
+                    "('input','output')."
+                )
+
+            for entry in tqdm(dataset, desc="Building prompts"):
+                body = entry[input_key]
+                if tokenizer is not None:
+                    body_budget = args.max_prompt_tokens - 512
+                    body, _ = truncate_context(body, tokenizer, body_budget)
+
+                prompt = f"""
+Use 3-5 sentences to answer the following question based on the meeting transcript.
+You must keep both your reasoning and your final answer concise and to the point. Focus on the main topics, key decisions, and outcomes. Avoid irrelevant or unnecessary thinking.
+
+{SAMPLE_ANSWER_START_STRING}
+{formatted_samples_general_queries}
+{SAMPLE_ANSWER_END_STRING}
+
+{body}
+"""
                 data_list.append({
                     "query": prompt,
-                    "gt": query_item["answer"],
-                    "context": entry['meeting_transcripts'],
+                    "gt": entry[output_key],
+                    "context": entry[input_key],
                     "solutions": [],
                     "labels": [],
-                    "topic": entry['topic'],
+                    "topic": entry.get("id", entry.get("topic", "")),
                     "source": "QMSum"
                 })
 
