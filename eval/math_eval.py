@@ -15,7 +15,13 @@ from tqdm import tqdm
 from trajectory import *
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils import construct_prompt, load_jsonl, save_jsonl, set_seed
-from vllm import LLM, SamplingParams
+try:
+    from vllm import LLM, SamplingParams
+    _VLLM_AVAILABLE = True
+except ImportError:
+    LLM = None
+    SamplingParams = None
+    _VLLM_AVAILABLE = False
 
 
 def parse_args():
@@ -129,6 +135,11 @@ def setup(args):
         data_list = need_eval_data_list
     
     if args.use_vllm:
+        if not _VLLM_AVAILABLE:
+            raise RuntimeError(
+                "--use_vllm was passed but vllm is not installed. "
+                "On macOS, omit --use_vllm to use the HuggingFace path instead."
+            )
         llm = LLM(
             model=args.model_name_or_path,
             tensor_parallel_size=len(available_gpus) // args.pipeline_parallel_size,

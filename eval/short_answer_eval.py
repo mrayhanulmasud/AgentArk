@@ -12,7 +12,13 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
+try:
+    from vllm import LLM, SamplingParams
+    _VLLM_AVAILABLE = True
+except ImportError:
+    LLM = None
+    SamplingParams = None
+    _VLLM_AVAILABLE = False
 from rouge_score import rouge_scorer
 import bert_score
 import pandas as pd
@@ -244,6 +250,11 @@ def main(args):
 
         # Load model
         if args.use_vllm:
+            if not _VLLM_AVAILABLE:
+                raise RuntimeError(
+                    "--use_vllm was passed but vllm is not installed. "
+                    "On macOS, omit --use_vllm to use the HuggingFace path instead."
+                )
             llm_kwargs = {
                 "model": args.model_name_or_path,
                 "tensor_parallel_size": args.tensor_parallel_size,

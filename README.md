@@ -53,11 +53,18 @@ pip install -r requirements.txt
 | Evaluation | `rouge_score`, `bert_score`, `sympy` |
 | Utilities | `datasets`, `accelerate`, `peft`, `wandb` |
 
-### macOS Setup (API-Backed Inference Only)
+### macOS Setup
 
-macOS has no CUDA, so `flash-attn`, `vllm`, `bitsandbytes`, and `deepspeed` cannot be installed. Training and the vLLM-based eval scripts will not run on Mac. However, `inference.py` works end-to-end on Mac when pointed at an OpenAI-compatible endpoint (e.g., a local Ollama server).
+macOS has no CUDA, so `flash-attn`, `vllm`, `bitsandbytes`, and `deepspeed` cannot be installed. The following works on Mac (Apple Silicon and Intel):
 
-**Step-by-step:**
+- **Inference** via `inference.py` — pointed at a local OpenAI-compatible endpoint (Ollama).
+- **Evaluation** via `eval/short_answer_eval.py` and `eval/math_eval.py` — run without `--use_vllm`; falls back to HuggingFace `generate()` on MPS/CPU.
+- **PRM training** via `prm/finetune2.py` — HuggingFace `Trainer` + MPS.
+- **GRPO training** via `openrlhf.cli.train_grpo_mac` — TRL-based, single-process, MPS/CPU. A slower alternative to the CUDA `train_grpo.py`.
+
+What still requires NVIDIA CUDA: `openrlhf.cli.train_grpo` (DeepSpeed/vLLM/Ray), the `--use_vllm` flag anywhere, and `bitsandbytes` quantization.
+
+**Step-by-step (inference):**
 
 ```bash
 # 1. Install Ollama and pull the smallest Qwen3 model (~500 MB)
@@ -85,6 +92,78 @@ python inference.py --method_name llm_debate --model_name qwen3:0.6b \
 ```
 
 To use a different backend (OpenAI, Together, LM Studio, etc.), edit `model_api_configs/model_api_config.json` — the top-level key must match `--model_name`, and `model_url` must point at a `/v1/chat/completions`-style endpoint.
+
+**Evaluation on Mac:**
+
+```bash
+# Short-answer eval (QMSum, HotpotQA, QASPER) — omit --use_vllm
+python -m eval.short_answer_eval \
+    --model_name_or_path Qwen/Qwen3-0.6B \
+    --dataset_name QMSum \
+    --split validation \
+    --output_dir outputs \
+    --batch_size 4
+
+# Math eval — omit --use_vllm
+python -m eval.math_eval \
+    --model_name_or_path Qwen/Qwen3-0.6B \
+    --data_names math \
+    --output_dir outputs \
+    --batch_size 4
+```
+
+**PRM training on Mac:**
+
+The PRM script uses HuggingFace `Trainer`, which transparently picks MPS on Apple Silicon or CPU otherwise. Do **not** pass `--deepspeed` — leave it unset.
+
+```bash
+PYTHONPATH=$PYTHONPATH:$(pwd) python prm/finetune2.py \
+    --model_name_or_path Qwen/Qwen3-0.6B \
+    --train_data_path trl-lib/math_shepherd \
+    --output_dir outputs/prm_Qwen3-0.6B \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 2 \
+    --per_device_eval_batch_size 2 \
+    --gradient_accumulation_steps 4 \
+    --learning_rate 1e-4 \
+    --logging_steps 1 \
+    --save_steps 200 \
+    --save_total_limit 2 \
+    --bf16 True \
+    --fix_llm True \
+    --max_train_samples 200
+```
+
+For low-memory Macs, start with `--max_train_samples 50 --bf16 False` (uses fp32 but less head-room). Expect training to be considerably slower than on a GPU — this is for sanity checks and small experiments, not full-scale runs.
+
+**GRPO training on Mac:**
+
+A Mac-friendly GRPO script ships at `openrlhf/cli/train_grpo_mac.py`. It uses `trl.GRPOTrainer` (no DeepSpeed/Ray/vLLM), runs single-process, and exposes a simplified reward API (`length` or `prm`). Behavior is **not identical** to the CUDA `train_grpo.py`.
+
+```bash
+# Toy run with the length-based reward (good for sanity checking the loop)
+python -m openrlhf.cli.train_grpo_mac \
+    --pretrain Qwen/Qwen3-0.6B \
+    --save_path outputs/grpo_mac_Qwen3-0.6B \
+    --dataset trl-lib/tldr \
+    --reward_mode length \
+    --n_samples_per_prompt 4 \
+    --temperature 0.7 \
+    --max_samples 32 \
+    --num_episodes 1
+
+# Using a trained PRM as reward model
+python -m openrlhf.cli.train_grpo_mac \
+    --pretrain Qwen/Qwen3-0.6B \
+    --save_path outputs/grpo_mac_Qwen3-0.6B \
+    --reward_mode prm \
+    --reward_pretrain outputs/prm_Qwen3-0.6B \
+    --dataset results/QMSum/labeled.jsonl \
+    --prompt_column query \
+    --n_samples_per_prompt 4 \
+    --temperature 0.7 \
+    --max_samples 64
+```
 
 ## Quick Start
 
