@@ -5,6 +5,12 @@ from tqdm import tqdm
 SAMPLE_ANSWER_START_STRING = "## Sample Answers (Use them to guide the style of your answer)"
 SAMPLE_ANSWER_END_STRING = "--- End of Sample Answers ---"
 
+# Maps friendly --dataset_name values to HuggingFace Hub identifiers.
+# Pass --dataset_hub_path to override these at runtime.
+DATASET_HUB_MAP = {
+    "QMSum": "Yale-LILY/qmsum",
+}
+
 # Maximum prompt tokens by model family
 MODEL_MAX_PROMPT_TOKENS = {
     "google/gemma-7b-it": 40960,
@@ -79,8 +85,20 @@ def build_dataset(args, tokenizer=None):
         
         formatted_samples_general_queries = "\n\n".join([f"Sample Question: {sample['query']}\nSample Answer: {sample['answer']}" for sample in samples_general_queries])
         formatted_samples_specific_queries = "\n\n".join([f"Sample Question: {sample['query']}\nSample Answer: {sample['answer']}" for sample in samples_specific_queries])
-        dataset = load_dataset(args.dataset_name, split=args.split)
-        
+        _hub_path = (
+            getattr(args, "dataset_hub_path", None)
+            or DATASET_HUB_MAP.get(args.dataset_name, args.dataset_name)
+        )
+        print(f"[build_dataset] loading QMSum from Hub path: {_hub_path}")
+        try:
+            dataset = load_dataset(_hub_path, split=args.split)
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not load QMSum from '{_hub_path}': {e}\n"
+                "Pass --dataset_hub_path <org/dataset> to specify the correct "
+                "HuggingFace Hub path (e.g. Yale-LILY/qmsum)."
+            ) from e
+
         for entry in tqdm(dataset, desc="Building prompts"):
 
             transcript_formatted = "\n".join([f"{t['speaker']}: {t['content']}"

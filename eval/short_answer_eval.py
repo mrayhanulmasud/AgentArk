@@ -67,6 +67,12 @@ def parse_args():
     parser.add_argument("--max_model_len", default=None, type=int, help="Maximum model context length for vLLM")
     parser.add_argument("--max_prompt_tokens", default=None, type=int,
                        help="Maximum tokens for prompt transcript")
+    parser.add_argument("--dataset_hub_path", default=None, type=str,
+                       help="Override HuggingFace Hub path for the dataset "
+                            "(e.g. 'Yale-LILY/qmsum'). Falls back to DATASET_HUB_MAP, "
+                            "then --dataset_name.")
+    parser.add_argument("--apply_chat_template", action="store_true",
+                       help="Apply the model's chat template to each prompt.")
 
     args = parser.parse_args()
     if args.max_prompt_tokens and args.max_model_len is None:
