@@ -136,6 +136,31 @@ PYTHONPATH=$PYTHONPATH:$(pwd) python prm/finetune2.py \
 
 For low-memory Macs, start with `--max_train_samples 50 --bf16 False` (uses fp32 but less head-room). Expect training to be considerably slower than on a GPU — this is for sanity checks and small experiments, not full-scale runs.
 
+**Solution labeling on Mac:**
+
+`label.py` defaults to an API backend on all platforms. Point it at the same Ollama-backed config used by inference, and use `--preview` to eyeball the original multi-agent response next to the parsed + labeled solutions.
+
+```bash
+# 1. Label inference output with Qwen3 via Ollama
+python label.py \
+    --input results/QMSum/qwen3:0.6b/llm_debate_infer.jsonl \
+    --dataset_name QMSum \
+    --model qwen3:0.6b \
+    --backend api \
+    --model_api_config model_api_configs/model_api_config.json \
+    --end 5 \
+    --preview 2
+
+# 2. On a CUDA box you can still use the original vLLM path
+python label.py \
+    --input results/QMSum/Qwen/Qwen3-32B/llm_debate_infer.jsonl \
+    --dataset_name QMSum \
+    --model Qwen/Qwen2.5-72B-Instruct \
+    --backend vllm
+```
+
+The output file sits next to the input (`..._labeled_by_<model>.jsonl`) and keeps the original `response` alongside the split `solutions`, so you can diff them directly. `--preview N` prints the first N items in a human-readable form: query, ground truth, the first 400 chars of the original response, each parsed solution with its TRUE/false verdict and the raw model text, and the final `labels` array.
+
 **GRPO training on Mac:**
 
 A Mac-friendly GRPO script ships at `openrlhf/cli/train_grpo_mac.py`. It uses `trl.GRPOTrainer` (no DeepSpeed/Ray/vLLM), runs single-process, and exposes a simplified reward API (`length` or `prm`). Behavior is **not identical** to the CUDA `train_grpo.py`.
