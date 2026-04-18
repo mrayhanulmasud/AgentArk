@@ -86,10 +86,10 @@ def build_dataset(args, tokenizer=None):
         
         formatted_samples_general_queries = "\n\n".join([f"Sample Question: {sample['query']}\nSample Answer: {sample['answer']}" for sample in samples_general_queries])
         formatted_samples_specific_queries = "\n\n".join([f"Sample Question: {sample['query']}\nSample Answer: {sample['answer']}" for sample in samples_specific_queries])
+        _hub_map_lower = {k.lower(): v for k, v in DATASET_HUB_MAP.items()}
         _hub_path = (
             getattr(args, "dataset_hub_path", None)
-            or DATASET_HUB_MAP.get(args.dataset_name)
-            or DATASET_HUB_MAP.get(dataset_name_norm)
+            or _hub_map_lower.get(dataset_name_norm)
             or args.dataset_name
         )
         print(f"[build_dataset] loading QMSum from Hub path: {_hub_path}")
