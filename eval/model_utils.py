@@ -225,12 +225,16 @@ def load_hf_lm_and_tokenizer(
     
     elif subfolder:
         print(f"Loading from Checkpoint {model_name_or_path} subfolder {subfolder}")
+        # Pass None when the flag isn't set so HF autodetects the checkpoint
+        # format; passing False forces a pytorch_model.bin lookup, which fails
+        # on safetensors-only releases like Qwen3.
+        _use_safetensors = use_safetensors if use_safetensors else None
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
                                                      torch_dtype=torch.float16,
                                                      subfolder=subfolder,
                                                      device_map=device_map,
                                                      trust_remote_code=True,
-                                                     use_safetensors=use_safetensors)
+                                                     use_safetensors=_use_safetensors)
         
     
     else:
@@ -246,11 +250,14 @@ def load_hf_lm_and_tokenizer(
         else:
             preferred_dtype = torch.float32
 
+        # Pass None when the flag isn't set so HF autodetects the checkpoint
+        # format; passing False forces a pytorch_model.bin lookup.
+        _use_safetensors = use_safetensors if use_safetensors else None
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
                                                      torch_dtype=preferred_dtype,
                                                      device_map=device_map,
                                                      trust_remote_code=True,
-                                                     use_safetensors=use_safetensors)
+                                                     use_safetensors=_use_safetensors)
         if torch.cuda.is_available():
             model = model.cuda()
         elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
