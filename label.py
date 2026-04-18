@@ -2,8 +2,15 @@ import json
 import re
 import torch
 from collections import namedtuple, defaultdict
-from vllm import LLM, SamplingParams
-from vllm.sampling_params import GuidedDecodingParams
+try:
+    from vllm import LLM, SamplingParams
+    from vllm.sampling_params import GuidedDecodingParams
+    _VLLM_AVAILABLE = True
+except ImportError:
+    LLM = None
+    SamplingParams = None
+    GuidedDecodingParams = None
+    _VLLM_AVAILABLE = False
 from tqdm import tqdm
 
 def extract_final_answer(gt_text):

@@ -8,7 +8,13 @@ from datasets import load_dataset
 from model_utils import generate_completions, load_hf_lm_and_tokenizer
 from tqdm import tqdm
 from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
+try:
+    from vllm import LLM, SamplingParams
+    _VLLM_AVAILABLE = True
+except ImportError:
+    LLM = None
+    SamplingParams = None
+    _VLLM_AVAILABLE = False
 from math_eval import parse_args as parse_args_math
 from eval_utils import set_seed, save_jsonl, load_jsonl
 from misc_utils import print_colored
