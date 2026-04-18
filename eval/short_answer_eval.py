@@ -282,7 +282,7 @@ def main(args):
         if "llama" in args.model_name_or_path.lower():
             max_length = 7168 if args.max_prompt_tokens is None else min(args.max_prompt_tokens, 7168)
             
-        truncated_prompts = tokenizer.batch_encode_plus(prompts, truncation=True, max_length=max_length)
+        truncated_prompts = tokenizer(prompts, truncation=True, max_length=max_length)
         prompts = tokenizer.batch_decode(truncated_prompts.input_ids)
         
         prompts = [tokenizer.apply_chat_template([{"role": "user", "content": p}],
