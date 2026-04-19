@@ -73,17 +73,24 @@ def build_label_prompt(query, solution_text, gt_answer, dataset_name):
     
     part2 = ""
     if dataset_name == "QMSum":
-        assert "## Meeting Transcript" in prompt
-        parts = prompt.split("## Meeting Transcript")
-        assert len(parts) == 2
-        query, part2 = parts
-        
+        if "## Meeting Transcript" in prompt:
+            parts = prompt.split("## Meeting Transcript")
+            assert len(parts) == 2
+            query, part2 = parts
+        else:
+            # Query was not produced by utils/model_utils.py::build_dataset
+            # (e.g. seeded directly from a SCROLLS-style Hub mirror). Treat
+            # the whole thing as the question and emit no transcript suffix.
+            query = prompt
+
     elif dataset_name == "QASPER":
-        assert "# Paper Content" in prompt
-        parts = prompt.split("# Paper Content")
-        assert len(parts) == 2
-        query, part2 = parts
-        part2 = part2.split("## Conclusion")[0].strip()
+        if "# Paper Content" in prompt:
+            parts = prompt.split("# Paper Content")
+            assert len(parts) == 2
+            query, part2 = parts
+            part2 = part2.split("## Conclusion")[0].strip()
+        else:
+            query = prompt
     
     prompt = f"""
 You are labeling whether a solution correctly solves a question.

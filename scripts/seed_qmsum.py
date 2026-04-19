@@ -56,16 +56,25 @@ def main():
                     "source": "QMSum",
                 })
     elif "input" in columns and "output" in columns:
-        # SCROLLS-style schema — one row per query, pre-formatted prompt.
-        records = [
-            {
-                "query": entry["input"],
+        # SCROLLS-style schema — one row per query with `input` containing the
+        # question followed by the transcript. Insert a `## Meeting Transcript`
+        # marker after the first blank line so downstream tooling
+        # (label.py, eval prompt templates) can split cleanly. If no blank
+        # line is found, the marker goes at the start of the body.
+        records = []
+        for entry in dataset:
+            raw = entry["input"]
+            if "\n\n" in raw:
+                head, body = raw.split("\n\n", 1)
+                query = f"Question: {head.strip()}\n\n## Meeting Transcript\n{body}"
+            else:
+                query = f"## Meeting Transcript\n{raw}"
+            records.append({
+                "query": query,
                 "gt": entry["output"],
                 "topic": entry.get("id", ""),
                 "source": "QMSum",
-            }
-            for entry in dataset
-        ]
+            })
     else:
         print(f"[seed_qmsum] unexpected schema: {sorted(columns)}",
               file=sys.stderr)
