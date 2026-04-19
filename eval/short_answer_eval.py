@@ -75,7 +75,7 @@ def parse_args():
                        help="Apply the model's chat template to each prompt.")
 
     args = parser.parse_args()
-    if args.max_prompt_tokens and args.max_model_len is None:
+    if args.max_prompt_tokens and args.max_model_len is not None:
         assert args.max_model_len > args.max_prompt_tokens
     return args
 
