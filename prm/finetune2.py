@@ -15,7 +15,11 @@ def _dist_is_active() -> bool:
     except Exception:
         return False
 
-from trl import PRMConfig, PRMTrainer
+try:
+    from trl import PRMConfig, PRMTrainer
+except ImportError:
+    # trl >= 1.0 moved PRM to trl.experimental.prm
+    from trl.experimental.prm import PRMConfig, PRMTrainer
 import torch
 import torch.nn.functional as F
 import logging
