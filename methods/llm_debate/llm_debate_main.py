@@ -122,8 +122,15 @@ from ..mas_base import MAS
 import random
 import json
 import requests
-from vllm import SamplingParams, LLM
-from vllm.sampling_params import GuidedDecodingParams
+try:
+    from vllm import SamplingParams, LLM
+    from vllm.sampling_params import GuidedDecodingParams
+    _VLLM_AVAILABLE = True
+except ImportError:
+    SamplingParams = None
+    LLM = None
+    GuidedDecodingParams = None
+    _VLLM_AVAILABLE = False
 from tqdm import tqdm
 from transformers import AutoTokenizer
 import time
@@ -275,6 +282,11 @@ class LLM_Debate_Main(MAS):
         
         # Step 1: Initialize vLLM engine (lazy init)
         if not hasattr(self, '_vllm_engine'):
+            if not _VLLM_AVAILABLE:
+                raise RuntimeError(
+                    "The vLLM code path was invoked but vllm is not installed. "
+                    "On macOS, drop --use_vllm and run with the API backend instead."
+                )
             gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(",")
             self._vllm_engine = LLM(
                 model=self.model_name,

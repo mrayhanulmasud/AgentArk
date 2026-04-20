@@ -90,7 +90,7 @@ def generate_completions(model, tokenizer, prompts, batch_size=1, stop_id_sequen
             batch_input_ids = tokenized_prompts.input_ids
             attention_mask = tokenized_prompts.attention_mask
 
-            if model.device.type == "cuda":
+            if model.device.type in ("cuda", "mps"):
                 batch_input_ids = batch_input_ids.to(model.device)
                 attention_mask = attention_mask.to(model.device)
 
@@ -131,9 +131,9 @@ def generate_completions(model, tokenizer, prompts, batch_size=1, stop_id_sequen
             input_ids = tokenized_prompt.input_ids
             attention_mask = tokenized_prompt.attention_mask
 
-            if model.device.type == "cuda":
-                input_ids = input_ids.cuda()
-                attention_mask = attention_mask.cuda()
+            if model.device.type in ("cuda", "mps"):
+                input_ids = input_ids.to(model.device)
+                attention_mask = attention_mask.to(model.device)
 
             stop_criteria = KeywordsStoppingCriteria(stop_id_sequences, tokenizer)
             outputs = model.generate(
@@ -225,25 +225,45 @@ def load_hf_lm_and_tokenizer(
     
     elif subfolder:
         print(f"Loading from Checkpoint {model_name_or_path} subfolder {subfolder}")
+        # Pass None when the flag isn't set so HF autodetects the checkpoint
+        # format; passing False forces a pytorch_model.bin lookup, which fails
+        # on safetensors-only releases like Qwen3.
+        _use_safetensors = use_safetensors if use_safetensors else None
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
                                                      torch_dtype=torch.float16,
                                                      subfolder=subfolder,
                                                      device_map=device_map,
                                                      trust_remote_code=True,
-                                                     use_safetensors=use_safetensors)
+                                                     use_safetensors=_use_safetensors)
         
     
     else:
         # return "", tokenizer
-        # defaul load in float16
+        # Pick a dtype that works on the current backend.
+        # - CUDA: float16 is the original default.
+        # - MPS (Apple Silicon): float16 works; bfloat16 only on newer chips.
+        # - CPU: float32 to avoid half-precision ops that CPU doesn't support.
+        if torch.cuda.is_available():
+            preferred_dtype = torch.float16
+        elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+            preferred_dtype = torch.float16
+        else:
+            preferred_dtype = torch.float32
+
+        # Pass None when the flag isn't set so HF autodetects the checkpoint
+        # format; passing False forces a pytorch_model.bin lookup.
+        _use_safetensors = use_safetensors if use_safetensors else None
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
-                                                     torch_dtype=torch.float16,
+                                                     torch_dtype=preferred_dtype,
                                                      device_map=device_map,
                                                      trust_remote_code=True,
-                                                     use_safetensors=use_safetensors)
+                                                     use_safetensors=_use_safetensors)
         if torch.cuda.is_available():
             model = model.cuda()
-        if load_in_half:
+        elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+            model = model.to("mps")
+
+        if load_in_half and preferred_dtype != torch.float32:
             model = model.half()
     model.eval()
     return model, tokenizer

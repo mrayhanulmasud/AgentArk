@@ -12,7 +12,13 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
+try:
+    from vllm import LLM, SamplingParams
+    _VLLM_AVAILABLE = True
+except ImportError:
+    LLM = None
+    SamplingParams = None
+    _VLLM_AVAILABLE = False
 from rouge_score import rouge_scorer
 import bert_score
 import pandas as pd
@@ -61,9 +67,15 @@ def parse_args():
     parser.add_argument("--max_model_len", default=None, type=int, help="Maximum model context length for vLLM")
     parser.add_argument("--max_prompt_tokens", default=None, type=int,
                        help="Maximum tokens for prompt transcript")
+    parser.add_argument("--dataset_hub_path", default=None, type=str,
+                       help="Override HuggingFace Hub path for the dataset "
+                            "(e.g. 'Yale-LILY/qmsum'). Falls back to DATASET_HUB_MAP, "
+                            "then --dataset_name.")
+    parser.add_argument("--apply_chat_template", action="store_true",
+                       help="Apply the model's chat template to each prompt.")
 
     args = parser.parse_args()
-    if args.max_prompt_tokens and args.max_model_len is None:
+    if args.max_prompt_tokens and args.max_model_len is not None:
         assert args.max_model_len > args.max_prompt_tokens
     return args
 
@@ -244,6 +256,11 @@ def main(args):
 
         # Load model
         if args.use_vllm:
+            if not _VLLM_AVAILABLE:
+                raise RuntimeError(
+                    "--use_vllm was passed but vllm is not installed. "
+                    "On macOS, omit --use_vllm to use the HuggingFace path instead."
+                )
             llm_kwargs = {
                 "model": args.model_name_or_path,
                 "tensor_parallel_size": args.tensor_parallel_size,
@@ -265,7 +282,7 @@ def main(args):
         if "llama" in args.model_name_or_path.lower():
             max_length = 7168 if args.max_prompt_tokens is None else min(args.max_prompt_tokens, 7168)
             
-        truncated_prompts = tokenizer.batch_encode_plus(prompts, truncation=True, max_length=max_length)
+        truncated_prompts = tokenizer(prompts, truncation=True, max_length=max_length)
         prompts = tokenizer.batch_decode(truncated_prompts.input_ids)
         
         prompts = [tokenizer.apply_chat_template([{"role": "user", "content": p}],
